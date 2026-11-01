@@ -1,0 +1,68 @@
+{
+    "name": "smstunnel/smstunnel-php",
+    "description": "PHP client for SMSTunnel: send texts from your own apps through your own Android phone, from your own number.",
+    "type": "library",
+    "keywords": [
+        "sms",
+        "smstunnel",
+        "android",
+        "text message",
+        "verification code",
+        "2fa",
+        "otp"
+    ],
+    "homepage": "https://smstunnel.io",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Narcis Bodea",
+            "email": "contact@narboweb.ro",
+            "homepage": "https://smstunnel.io",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "email": "contact@narboweb.ro",
+        "docs": "https://smstunnel.io"
+    },
+    "require": {
+        "php": "^8.1",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.64",
+        "nyholm/psr7": "^1.8",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^10.5 || ^11.5 || ^12.0 || ^13.0",
+        "psr/http-client": "^1.0",
+        "psr/http-factory": "^1.0",
+        "psr/http-message": "^1.1 || ^2.0"
+    },
+    "suggest": {
+        "ext-curl": "Used by the built-in transport (most PHP installs have it).",
+        "psr/http-client-implementation": "To send through your own PSR-18 client (Guzzle, Symfony HttpClient, ...) with SmsTunnel\\Transport\\Psr18Transport.",
+        "psr/http-factory-implementation": "The PSR-17 request and stream factories that go with your PSR-18 client."
+    },
+    "autoload": {
+        "psr-4": {
+            "SmsTunnel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SmsTunnel\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test:e2e": "phpunit --group e2e",
+        "analyse": "phpstan analyse --memory-limit=512M",
+        "cs": "php-cs-fixer fix --dry-run --diff",
+        "cs:fix": "php-cs-fixer fix"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
