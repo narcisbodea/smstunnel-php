@@ -75,7 +75,7 @@ class Client
      * @param string      $to                 the number in international format, e.g. `+14155550123`
      * @param string      $message            up to 1600 characters (10 joined SMS)
      * @param string|null $deviceId           send through this phone (see {@see getDevices()}); null lets SMSTunnel pick one of yours
-     * @param string|null $defaultCountryCode e.g. `+40`: completes numbers given without `+` or `00`. The phone's own setting wins when it has one.
+     * @param string|null $defaultCountryCode e.g. `+40`: completes numbers given without `+` or `00`. It always takes precedence over the phone's own setting.
      *
      * @throws \InvalidArgumentException when the number or the text is empty
      * @throws ApiException

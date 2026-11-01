@@ -187,6 +187,57 @@ In your own tests, implement `SmsTunnel\Transport\TransportInterface` (one metho
 - **Numbers**: use the international format (`+14155550123`). For local numbers, pass `defaultCountryCode`: it always takes precedence (`+49`, `49` and `0049` all work).
 - **Offline phone**: the text waits on your account (`queued` is `true`) and goes out when the phone is back online.
 
+## Build it with an AI assistant
+
+Paste this into Claude, ChatGPT, Cursor or Copilot and replace the part in brackets. Don't paste your API key into the chat: the prompt doesn't need it.
+
+```text
+Help me send text messages from my PHP app with SMSTunnel.
+
+About SMSTunnel (https://smstunnel.io): my own apps and tools hand text messages (SMS) to my
+SMSTunnel account, and my own Android phone sends them from my own number, on my own SIM and plan.
+The phone runs the SMSTunnel app from Google Play
+(https://play.google.com/store/apps/details?id=io.smstunnel.app), signed in to my account.
+
+What I want: [describe what should send a text, to whom, and when]
+
+How it works:
+- Use the official client: composer require smstunnel/smstunnel-php (PHP 8.1+, the curl extension or
+  any PSR-18 client; no other dependencies).
+- $client = new \SmsTunnel\Client((string) getenv('SMSTUNNEL_API_KEY'));
+- $result = $client->sendSms(to: '+14155550123', message: '...', deviceId: null, defaultCountryCode:
+  null); returns ->messageId, ->queued (true: the phone is offline and the text goes out when it is
+  back), ->branded, ->remaining. One call sends one text to one number: loop for several.
+- Sign-in codes: $client->sendVerificationCode('+14155550123', 'Your sign-in code is 482913'); the
+  text must contain the code as 4 to 10 digits (or 123-456) and can be up to 320 characters. Codes
+  have their own daily allowance.
+- $client->getMessageStatus($messageId): ->status ('pending', 'sent', 'delivered' or 'failed'),
+  ->deliveryStatus ('unconfirmed' = handed to the SIM without a confirmation, probably sent: never
+  resend it automatically), ->errorMessage, ->isFinal().
+- Exceptions, all extending SmsTunnel\Exception\SmsTunnelException: AuthenticationException (401),
+  PermissionException (403; getErrorCode() is PERMISSION_REQUIRED, getPermission()),
+  RateLimitException (429; getRetryAfter()), ApiException (other errors: 400 bad number or code text
+  without a code, 404, 5xx; getStatusCode(), getErrorCode(), getMessage()), TransportException
+  (network). An empty number or text throws \InvalidArgumentException.
+- Numbers in international format. defaultCountryCode (e.g. '+44') completes numbers written without
+  + or 00 and always takes precedence over the phone's own country setting. Texts up to 1600
+  characters; 30 send requests a minute.
+- The API key comes from my SMSTunnel dashboard (https://dashboard.smstunnel.io): Apps → Add an app
+  → Create the key. It is shown only once and can send texts and check whether they went out.
+
+Rules for your answer:
+- Keep the API key in an environment variable or the platform's secret store (for example
+  SMSTUNNEL_API_KEY). Never put it in source code, in a repository, or in code that runs in a
+  browser or a mobile app: call SMSTunnel from a server. I will not paste my key in this chat; use a
+  placeholder.
+- Validate phone numbers before sending (international format, like +14155550123) and skip or report
+  the invalid ones.
+- Handle errors: log or show what went wrong, retry only after 429, 5xx or network errors and only a
+  few times, and never send the same text twice.
+- Only send texts people expect from me: alerts to myself, reminders, sign-in codes, updates they
+  asked for. No unsolicited texts.
+```
+
 ## Responsible use
 
 Send only texts that people expect from you: alerts to yourself, appointment reminders, sign-in codes, order updates. Unsolicited messages from a personal SIM break most carriers' terms of service. Please make sure your usage complies with your carrier's terms and with local regulations (in the EU, that includes GDPR and ePrivacy rules on electronic communications).
