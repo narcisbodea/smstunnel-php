@@ -8,7 +8,7 @@ Your phone needs the SMSTunnel app from Google Play:
 
 <a href="https://play.google.com/store/apps/details?id=io.smstunnel.app"><img src="https://smstunnel.io/google-play-badge.png" alt="Get it on Google Play" height="56"></a>
 
-Using Laravel? [`smstunnel/laravel-notification-channel`](https://packagist.org/packages/smstunnel/laravel-notification-channel) builds on this package, so `$user->notify(new OrderShipped)` sends the text from your phone.
+Using Laravel? [`smstunnel/smstunnel-laravel`](https://packagist.org/packages/smstunnel/smstunnel-laravel) builds on this package, so `$user->notify(new OrderShipped)` sends the text from your phone.
 
 ## Requirements
 
@@ -25,9 +25,9 @@ composer require smstunnel/smstunnel-php
 
 ## Get an API key
 
-1. Install the [SMSTunnel app from Google Play](https://play.google.com/store/apps/details?id=io.smstunnel.app) on your Android phone and sign in. Sign in at [smstunnel.io](https://smstunnel.io) on your computer with the same account: the phone appears under **Devices** (you can also link it with the QR code from **Devices → Add Device**).
-2. In your SMSTunnel dashboard, create an API key.
-3. Give it the `sms:send` permission, and `sms:read` if you want to look up delivery statuses. Reading received texts only works with a key you have explicitly allowed to (`sms:inbox`, a separate opt-in per key). Syncing received texts is off by default in the app; when you turn it on, only texts that arrive from then on are synced, and the phone's existing messages are never read.
+1. Install the [SMSTunnel app from Google Play](https://play.google.com/store/apps/details?id=io.smstunnel.app) on your Android phone and sign in. Sign in at [smstunnel.io](https://smstunnel.io) on your computer with the same account: the phone appears under **Phones** (you can also link it with the QR code from **Phones → Add phone**).
+2. In your SMSTunnel dashboard, open **Apps** → **Add an app** and create its key. The key can send texts and look up whether they went out (`sms:send` and `sms:read`).
+3. Reading received texts only works with a key you have explicitly allowed to (**Can also read received texts**, the `sms:inbox` permission, a separate opt-in per key). Syncing received texts is off by default in the app; when you turn it on, only texts that arrive from then on are synced, and the phone's existing messages are never read.
 
 Keep the key out of your code: put it in an environment variable such as `SMSTUNNEL_API_KEY`.
 
@@ -67,7 +67,7 @@ One call sends one text to one number. To text several people, call `sendSms()` 
 $client->sendVerificationCode('+14155550123', 'Your sign-in code is 482913');
 ```
 
-The text must contain the code; SMSTunnel refuses it otherwise. Codes count against a separate quota, and the text can be up to 320 characters.
+The text must contain the code, 4 to 10 digits (for example `482913` or `123-456`); SMSTunnel refuses it otherwise. Codes count against a separate quota, and the text can be up to 320 characters.
 
 ### Look up a status
 
@@ -184,7 +184,7 @@ In your own tests, implement `SmsTunnel\Transport\TransportInterface` (one metho
 
 - **Rate limit**: sending allows 30 requests a minute.
 - **Length**: up to 1600 characters (10 joined SMS); verification codes up to 320.
-- **Numbers**: use the international format (`+14155550123`). For local numbers, pass `defaultCountryCode`; the phone's own country setting wins when it has one.
+- **Numbers**: use the international format (`+14155550123`). For local numbers, pass `defaultCountryCode`: it always takes precedence (`+49`, `49` and `0049` all work).
 - **Offline phone**: the text waits on your account (`queued` is `true`) and goes out when the phone is back online.
 
 ## Responsible use
