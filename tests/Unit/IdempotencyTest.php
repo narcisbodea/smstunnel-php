@@ -134,6 +134,46 @@ final class IdempotencyTest extends TestCase
         self::assertSame($key, $retry['headers']['Idempotency-Key']);
         self::assertSame($first['body'], $retry['body']);
         self::assertSame('6ae7957285431f6150ce52fc', $result->messageId);
+        self::assertTrue($result->replayed, 'the retry sent no new text');
+    }
+
+    /**
+     * @param \Closure(Client, ?string): SendResult $send
+     */
+    #[DataProvider('sends')]
+    public function testAFirstAnswerIsNotReplayed(\Closure $send, string $path): void
+    {
+        $this->transport->respond(200, self::SENT)->respond(200, self::SENT);
+
+        self::assertFalse($send($this->client, 'order-1042-shipped')->replayed);
+        self::assertFalse($send($this->client, null)->replayed);
+        self::assertSame('https://sms.example.test' . $path, $this->transport->lastRequest()['url']);
+    }
+
+    /**
+     * @return array<string, array{array<string, string>, bool}>
+     */
+    public static function replayHeaders(): array
+    {
+        return [
+            'true' => [['Idempotent-Replayed' => 'true'], true],
+            'any case and spaces' => [['idempotent-replayed' => ' True '], true],
+            'false' => [['Idempotent-Replayed' => 'false'], false],
+            'empty' => [['Idempotent-Replayed' => ''], false],
+            'none' => [[], false],
+        ];
+    }
+
+    /**
+     * @param array<string, string> $headers
+     */
+    #[DataProvider('replayHeaders')]
+    public function testReplayedComesFromTheIdempotentReplayedHeader(array $headers, bool $replayed): void
+    {
+        $this->transport->respond(200, self::SENT, $headers)->respond(200, self::SENT, $headers);
+
+        self::assertSame($replayed, $this->client->sendSms(self::TO, 'Hi', idempotencyKey: 'order-1042-shipped')->replayed);
+        self::assertSame($replayed, $this->client->sendVerificationCode(self::TO, 'Your sign-in code is 482913', idempotencyKey: 'sign-in-77')->replayed);
     }
 
     /**

@@ -51,6 +51,18 @@ final class Psr18TransportTest extends TestCase
         self::assertSame('sign-in-77', $http->request->getHeaderLine('Idempotency-Key'));
     }
 
+    public function testAReplayedAnswerIsMarked(): void
+    {
+        $http = new RecordingClient(new Response(200, ['Content-Type' => 'application/json', 'Idempotent-Replayed' => 'true'], '{"success":true,"messageId":"m-psr","data":{"messageId":"m-psr"}}'));
+        $factory = new Psr17Factory();
+        $client = new Client('sk_test_key', 'https://sms.example.test', new Psr18Transport($http, $factory, $factory));
+
+        $result = $client->sendSms('+14155550123', 'Hi', idempotencyKey: 'order-1042-shipped');
+
+        self::assertTrue($result->replayed);
+        self::assertSame('m-psr', $result->messageId);
+    }
+
     public function testAGetHasNoBody(): void
     {
         $http = new RecordingClient(new Response(200, [], '{"success":true,"data":{"devices":[],"online":0,"total":0}}'));

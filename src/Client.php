@@ -101,7 +101,9 @@ class Client
         ?string $defaultCountryCode = null,
         ?string $idempotencyKey = null,
     ): SendResult {
-        return SendResult::fromArray($this->post('/api/v1/sms/send', $this->sendBody($to, $message, $deviceId, $defaultCountryCode), $idempotencyKey));
+        [$answer, $response] = $this->post('/api/v1/sms/send', $this->sendBody($to, $message, $deviceId, $defaultCountryCode), $idempotencyKey);
+
+        return SendResult::fromArray($answer, self::replayed($response));
     }
 
     /**
@@ -123,7 +125,9 @@ class Client
         ?string $defaultCountryCode = null,
         ?string $idempotencyKey = null,
     ): SendResult {
-        return SendResult::fromArray($this->post('/api/v1/sms/send-2fa', $this->sendBody($to, $message, $deviceId, $defaultCountryCode), $idempotencyKey));
+        [$answer, $response] = $this->post('/api/v1/sms/send-2fa', $this->sendBody($to, $message, $deviceId, $defaultCountryCode), $idempotencyKey);
+
+        return SendResult::fromArray($answer, self::replayed($response));
     }
 
     /**
@@ -243,7 +247,7 @@ class Client
     /**
      * @param array<string, string> $body
      *
-     * @return array<string, mixed>
+     * @return array{array<string, mixed>, HttpResponse} the decoded answer, and the response it came in
      */
     private function post(string $path, array $body, ?string $idempotencyKey = null): array
     {
@@ -256,7 +260,15 @@ class Client
             throw new \InvalidArgumentException('The text could not be encoded: ' . $exception->getMessage(), 0, $exception);
         }
 
-        return $this->request('POST', $path, $json, $headers);
+        return $this->exchange('POST', $path, $json, $headers);
+    }
+
+    /**
+     * True when SMSTunnel answered a repeat of an `Idempotency-Key` with the first answer: no new text went out.
+     */
+    private static function replayed(HttpResponse $response): bool
+    {
+        return strtolower(trim((string) $response->header('idempotent-replayed'))) === 'true';
     }
 
     /**
@@ -279,11 +291,19 @@ class Client
     }
 
     /**
-     * @param array<string, string> $extraHeaders
-     *
      * @return array<string, mixed>
      */
-    private function request(string $method, string $path, ?string $json, array $extraHeaders = []): array
+    private function request(string $method, string $path, ?string $json): array
+    {
+        return $this->exchange($method, $path, $json)[0];
+    }
+
+    /**
+     * @param array<string, string> $extraHeaders
+     *
+     * @return array{array<string, mixed>, HttpResponse} the decoded answer, and the response it came in
+     */
+    private function exchange(string $method, string $path, ?string $json, array $extraHeaders = []): array
     {
         $headers = [
             'X-API-Key' => $this->apiKey,
@@ -325,7 +345,7 @@ class Client
             throw ApiException::fromResponse($response->statusCode, $body, $response->headers);
         }
 
-        return $body;
+        return [$body, $response];
     }
 
     /**

@@ -17,6 +17,8 @@ final class SendResult
      * @param bool                      $branded   true when the text carries a short SMSTunnel signature (plans with a free quota)
      * @param array<string, int|string> $remaining what is left of today's quota, e.g. `['clean' => 95, 'total' => 'unlimited']` (`-1` means no limit)
      * @param array<string, mixed>      $raw       the whole answer, for fields this version does not map yet
+     * @param bool                      $replayed  true when SMSTunnel answered a repeat of the `idempotencyKey` with the first answer (the
+     *                                             `Idempotent-Replayed` header): this call sent no new text, the first one did
      */
     public function __construct(
         public readonly string $messageId,
@@ -24,13 +26,15 @@ final class SendResult
         public readonly bool $branded = false,
         public readonly array $remaining = [],
         public readonly array $raw = [],
+        public readonly bool $replayed = false,
     ) {
     }
 
     /**
-     * @param array<string, mixed> $body the decoded answer of `POST /api/v1/sms/send` or `/send-2fa`
+     * @param array<string, mixed> $body     the decoded answer of `POST /api/v1/sms/send` or `/send-2fa`
+     * @param bool                 $replayed whether it came with `Idempotent-Replayed: true`
      */
-    public static function fromArray(array $body): self
+    public static function fromArray(array $body, bool $replayed = false): self
     {
         $data = Fields::object($body, 'data');
 
@@ -40,6 +44,7 @@ final class SendResult
             branded: Fields::bool($data, 'branded'),
             remaining: Fields::counters($data, 'remaining'),
             raw: $body,
+            replayed: $replayed,
         );
     }
 }

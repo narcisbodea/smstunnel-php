@@ -183,6 +183,7 @@ for ($attempt = 1; $attempt <= 3; ++$attempt) {
 ```
 
 - `sendVerificationCode()` takes `idempotencyKey` too.
+- `$result->replayed` is `true` when SMSTunnel answered with the first answer (its `Idempotent-Replayed` header): that call sent no new text.
 - The same key with a different text, number, phone or country code gets an `ApiException` with status 422 and `getErrorCode()` `IDEMPOTENCY_KEY_REUSED`, and nothing goes out.
 - A refusal (4xx) means nothing went out: fix the cause, then retry with the same key. A server error (5xx) is kept with the key, because the text may have gone out before it: a retry gets the same error back. Check your dashboard before you send that text again with a new key.
 - A key is 1 to 255 printable ASCII characters, without spaces at the ends. Anything else throws `\InvalidArgumentException` before anything is sent.
