@@ -13,6 +13,8 @@ use SmsTunnel\Internal\Fields;
 use SmsTunnel\Response\DeviceList;
 use SmsTunnel\Response\MessageStatus;
 use SmsTunnel\Response\ReceivedMessages;
+use SmsTunnel\Response\ScheduledText;
+use SmsTunnel\Response\ScheduledTexts;
 use SmsTunnel\Response\SendResult;
 use SmsTunnel\Response\Usage;
 use SmsTunnel\Transport\CurlTransport;
@@ -36,10 +38,14 @@ use SmsTunnel\Transport\TransportInterface;
  */
 class Client
 {
-    public const VERSION = '1.1.0';
+    public const VERSION = '1.2.0';
     public const DEFAULT_BASE_URL = 'https://smstunnel.io';
 
     private const RECEIVED_FILTERS = ['limit', 'page', 'since', 'phone', 'deviceId'];
+    private const SCHEDULED_SCOPES = [ScheduledTexts::WAITING, ScheduledTexts::DONE];
+
+    /** What SMSTunnel accepts as `sendAt`: a full ISO 8601 date and time with its offset. */
+    private const SEND_AT = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})\z/';
 
     /**
      * What SMSTunnel accepts as an Idempotency-Key (printable ASCII, at most 255), without spaces at the ends: the
@@ -78,19 +84,27 @@ class Client
     }
 
     /**
-     * Sends one text to one number, from your phone.
+     * Sends one text to one number, from your phone: now, or at `$sendAt`.
      *
-     * @param string      $to                 the number in international format, e.g. `+14155550123`
-     * @param string      $message            up to 1600 characters (10 joined SMS)
-     * @param string|null $deviceId           send through this phone (see {@see getDevices()}); null lets SMSTunnel pick one of yours
-     * @param string|null $defaultCountryCode e.g. `+40`: completes numbers given without `+` or `00`. It always takes precedence over the phone's own setting.
-     * @param string|null $idempotencyKey     makes the call safe to retry. It goes out as the `Idempotency-Key` header. For 24 hours, a repeat of
-     *                                        the call with the same key gets the first answer back (the same message id) instead of a second text;
-     *                                        the same key with a different text, number, phone or country code is refused ({@see ApiException} 422,
-     *                                        error code `IDEMPOTENCY_KEY_REUSED`). Use one new key per text and the same key on every retry of it:
-     *                                        a UUID, or your own id such as `order-1042-shipped`. 1 to 255 printable ASCII characters, no spaces at the ends.
+     * @param string                         $to                 the number in international format, e.g. `+14155550123`
+     * @param string                         $message            up to 1600 characters (10 joined SMS)
+     * @param string|null                    $deviceId           send through this phone (see {@see getDevices()}); null lets SMSTunnel pick one of yours
+     * @param string|null                    $defaultCountryCode e.g. `+40`: completes numbers given without `+` or `00`. It always takes precedence over the phone's own setting.
+     * @param string|null                    $idempotencyKey     makes the call safe to retry. It goes out as the `Idempotency-Key` header. For 24 hours, a repeat of
+     *                                                           the call with the same key gets the first answer back (the same message id) instead of a second text;
+     *                                                           the same key with a different text, number, phone, country code or `$sendAt` is refused ({@see ApiException} 422,
+     *                                                           error code `IDEMPOTENCY_KEY_REUSED`). Use one new key per text and the same key on every retry of it:
+     *                                                           a UUID, or your own id such as `order-1042-shipped`. 1 to 255 printable ASCII characters, no spaces at the ends.
+     * @param \DateTimeInterface|string|null $sendAt             send it at this time instead of now, 1 minute to 30 days ahead: a `\DateTimeInterface` (it goes out
+     *                                                           with its own offset, so make it in the time zone you mean) or an ISO 8601 string with an offset, such
+     *                                                           as `2026-11-16T09:00:00+02:00`. SMSTunnel keeps the text and the call returns a {@see ScheduledText}
+     *                                                           instead of a {@see SendResult}. At that time SMSTunnel sends it as if you called sendSms() then, with
+     *                                                           this API key: the phone, the country code and the day's allowance are those of that moment.
      *
-     * @throws \InvalidArgumentException when the number or the text is empty, or the key is not 1 to 255 printable ASCII characters without spaces at the ends
+     * @return ($sendAt is null ? SendResult : ScheduledText)
+     *
+     * @throws \InvalidArgumentException when the number or the text is empty, the key is not 1 to 255 printable ASCII characters without spaces at the ends,
+     *                                   or `$sendAt` is a string that is not an ISO 8601 date and time with an offset
      * @throws ApiException
      * @throws TransportException
      */
@@ -100,10 +114,23 @@ class Client
         ?string $deviceId = null,
         ?string $defaultCountryCode = null,
         ?string $idempotencyKey = null,
-    ): SendResult {
-        [$answer, $response] = $this->post('/api/v1/sms/send', $this->sendBody($to, $message, $deviceId, $defaultCountryCode), $idempotencyKey);
+        \DateTimeInterface|string|null $sendAt = null,
+    ): SendResult|ScheduledText {
+        $body = $this->sendBody($to, $message, $deviceId, $defaultCountryCode);
+        if ($sendAt !== null) {
+            $body['sendAt'] = self::sendAtValue($sendAt);
+        }
 
-        return SendResult::fromArray($answer, self::replayed($response));
+        [$answer, $response] = $this->post('/api/v1/sms/send', $body, $idempotencyKey);
+        if ($sendAt === null) {
+            return SendResult::fromArray($answer, self::replayed($response));
+        }
+
+        // `data` is the scheduled text; the answer's own `scheduledId` and `sendAt` fill in for a `data` without them.
+        return ScheduledText::fromArray(
+            Fields::object($answer, 'data') + ['id' => $answer['scheduledId'] ?? null, 'sendAt' => $answer['sendAt'] ?? null],
+            self::replayed($response),
+        );
     }
 
     /**
@@ -144,6 +171,59 @@ class Client
         }
 
         return MessageStatus::fromArray($this->data($this->get('/api/v1/sms/status/' . rawurlencode($messageId))));
+    }
+
+    /**
+     * The texts this API key scheduled with `sendSms(..., sendAt: ...)`: not another key's, nor the dashboard's.
+     * Needs a key with the `sms:read` permission.
+     *
+     * @param string $scope `waiting` ({@see ScheduledTexts::WAITING}, the default): the ones still waiting, soonest first;
+     *                      `done` ({@see ScheduledTexts::DONE}): the ones that went out, failed or were canceled in the last 30 days, newest first
+     * @param int    $page  from 1
+     * @param int    $limit texts per page, at most 100
+     *
+     * @throws \InvalidArgumentException when the scope is not `waiting` or `done`
+     * @throws ApiException
+     * @throws TransportException
+     */
+    public function listScheduled(string $scope = ScheduledTexts::WAITING, int $page = 1, int $limit = 50): ScheduledTexts
+    {
+        if (!\in_array($scope, self::SCHEDULED_SCOPES, true)) {
+            throw new \InvalidArgumentException(\sprintf('Unknown scope "%s". Use "%s".', $scope, implode('" or "', self::SCHEDULED_SCOPES)));
+        }
+
+        $query = http_build_query(['scope' => $scope, 'page' => $page, 'limit' => $limit], '', '&', \PHP_QUERY_RFC3986);
+
+        return ScheduledTexts::fromArray($this->data($this->get('/api/v1/sms/scheduled?' . $query)));
+    }
+
+    /**
+     * One text this API key scheduled. Needs a key with the `sms:read` permission.
+     *
+     * @param string $id the {@see ScheduledText::$id} that `sendSms(..., sendAt: ...)` returned
+     *
+     * @throws \InvalidArgumentException when the id is empty
+     * @throws ApiException 404 (error code `SCHEDULE_NOT_FOUND`) when this key scheduled no such text
+     * @throws TransportException
+     */
+    public function getScheduled(string $id): ScheduledText
+    {
+        return ScheduledText::fromArray($this->data($this->get(self::scheduledPath($id))));
+    }
+
+    /**
+     * Cancels a text this API key scheduled, while it still waits. Needs a key with the `sms:send` permission.
+     *
+     * @return ScheduledText the text, now `canceled`
+     *
+     * @throws \InvalidArgumentException when the id is empty
+     * @throws ApiException 409 (error code `SCHEDULE_NOT_EDITABLE`) when it already went out or was canceled; 404
+     *                      (`SCHEDULE_NOT_FOUND`) when this key scheduled no such text
+     * @throws TransportException
+     */
+    public function cancelScheduled(string $id): ScheduledText
+    {
+        return ScheduledText::fromArray($this->data($this->request('DELETE', self::scheduledPath($id), null)));
     }
 
     /**
@@ -234,6 +314,41 @@ class Client
         }
 
         return $body;
+    }
+
+    /**
+     * `$sendAt` as SMSTunnel takes it: a `\DateTimeInterface` in RFC 3339 with its own offset, a string as it is.
+     *
+     * @throws \InvalidArgumentException when the string is not an ISO 8601 date and time with an offset
+     */
+    private static function sendAtValue(\DateTimeInterface|string $sendAt): string
+    {
+        if ($sendAt instanceof \DateTimeInterface) {
+            return $sendAt->format(\DATE_ATOM);
+        }
+
+        $value = trim($sendAt);
+        if (preg_match(self::SEND_AT, $value) !== 1) {
+            throw new \InvalidArgumentException(\sprintf(
+                'sendAt must be an ISO 8601 date and time with its offset, such as 2026-11-16T09:00:00Z or 2026-11-16T11:00:00+02:00, '
+                . 'or a DateTimeInterface (got "%s"). Without an offset, the moment to send at is not known.',
+                $sendAt,
+            ));
+        }
+
+        return $value;
+    }
+
+    /**
+     * @throws \InvalidArgumentException when the id is empty
+     */
+    private static function scheduledPath(string $id): string
+    {
+        if (trim($id) === '') {
+            throw new \InvalidArgumentException('The scheduled text id is empty.');
+        }
+
+        return '/api/v1/sms/scheduled/' . rawurlencode(trim($id));
     }
 
     /**

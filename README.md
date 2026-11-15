@@ -70,6 +70,33 @@ $client->sendVerificationCode('+14155550123', 'Your sign-in code is 482913');
 
 The text must contain the code, 4 to 10 digits (for example `482913` or `123-456`); SMSTunnel refuses it otherwise. Codes count against a separate quota, and the text can be up to 320 characters.
 
+### Scheduled texts
+
+Give `sendSms()` a `sendAt`, 1 minute to 30 days ahead: SMSTunnel keeps the text and hands it to your phone at that time. The call then returns a `SmsTunnel\Response\ScheduledText` instead of a `SendResult`.
+
+```php
+$text = $client->sendSms(
+    '+14155550123',
+    'Reminder: your appointment is tomorrow at 10:30.',
+    sendAt: new DateTimeImmutable('2026-11-16 09:00', new DateTimeZone('Europe/Bucharest')),
+);
+
+$text->id;     // keep it to look the text up or cancel it
+$text->sendAt; // '2026-11-16T07:00:00.000Z' (UTC)
+$text->status; // 'scheduled', later 'sent', 'failed' (see $text->error) or 'canceled'
+
+$client->listScheduled();            // what still waits, soonest first; listScheduled('done') for the rest
+$client->getScheduled($text->id);    // ->messageId once it went out, for getMessageStatus()
+$client->cancelScheduled($text->id); // while it still waits
+```
+
+- `sendAt` is a `DateTimeInterface`, sent with its own offset (so make it in the time zone you mean), or an ISO 8601 string with an offset, such as `2026-11-16T09:00:00+02:00` or `2026-11-16T07:00:00Z`. A string without an offset throws `\InvalidArgumentException` before anything is sent.
+- At that time SMSTunnel sends the text as if your app called `sendSms()` then, with the same API key: it picks the phone then (unless you named one), and the text counts toward that day's allowance. If the phone is offline, the text waits for it up to 3 days.
+- Plain texts only: sign-in codes can't be scheduled.
+- `idempotencyKey` works as for any send. Keep the same `sendAt` on every retry: another time with the same key is refused (422).
+- A key lists, reads and cancels only the texts it scheduled. Listing and reading need `sms:read`, cancelling `sms:send`.
+- Refusals keep SMSTunnel's code in `getErrorCode()`: `ApiException` 400 `SCHEDULE_TOO_SOON` or `SCHEDULE_TOO_FAR` (and the other `SCHEDULE_*` codes), 404 `SCHEDULE_NOT_FOUND`, 409 `SCHEDULE_NOT_EDITABLE` (it already went out or was canceled), and `PermissionException` 403 `SCHEDULE_LIMIT_REACHED` when as many texts wait as your plan allows (`getBody()['max']`: 10 on Free, 50 Starter, 200 Standard, 500 Professional, 1000 Enterprise). `listScheduled()` also says how many wait in your account (`->waiting`) and the cap (`->max`).
+
 ### Look up a status
 
 Needs a key with `sms:read`.
@@ -247,6 +274,11 @@ How it works:
   bin2hex(random_bytes(16)), the same on every retry of that text) makes a retry within 24 hours get
   the first answer back instead of sending a second text. The same key with a different text is
   refused: ApiException 422, getErrorCode() IDEMPOTENCY_KEY_REUSED.
+- Scheduled texts: sendSms(..., sendAt: new DateTimeImmutable('2026-11-16 09:00', new
+  DateTimeZone('Europe/Bucharest'))), 1 minute to 30 days ahead (a DateTimeInterface, or an ISO 8601
+  string with an offset), returns a ScheduledText (->id, ->sendAt, ->status) instead of a
+  SendResult; $client->listScheduled(), getScheduled($id), cancelScheduled($id). Not for sign-in
+  codes.
 - Sign-in codes: $client->sendVerificationCode('+14155550123', 'Your sign-in code is 482913'); the
   text must contain the code as 4 to 10 digits (or 123-456) and can be up to 320 characters. Codes
   have their own daily allowance.

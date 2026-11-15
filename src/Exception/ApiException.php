@@ -69,6 +69,8 @@ class ApiException extends SmsTunnelException
      * - `PERMISSION_REQUIRED`: the key lacks a permission (see {@see PermissionException::getPermission()}).
      * - `IDEMPOTENCY_KEY_REUSED` (422): the idempotency key was already used for a different text.
      * - `IDEMPOTENCY_KEY_IN_PROGRESS` (409): the first try with this idempotency key is still running.
+     * - `SCHEDULE_TOO_SOON`, `SCHEDULE_TOO_FAR` and the other `SCHEDULE_*` codes (400, 403, 404, 409): a scheduled text
+     *   SMSTunnel refused, could not find (`SCHEDULE_NOT_FOUND`) or can no longer cancel (`SCHEDULE_NOT_EDITABLE`).
      * - `DISABLED_BY_SUPPORT`: SMSTunnel support turned the key or the phone off.
      */
     public function getErrorCode(): ?string

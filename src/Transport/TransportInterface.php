@@ -15,7 +15,7 @@ use SmsTunnel\Exception\TransportException;
 interface TransportInterface
 {
     /**
-     * @param string                $method  `GET` or `POST`
+     * @param string                $method  `GET`, `POST` or `DELETE`
      * @param array<string, string> $headers header name => value
      * @param string|null           $body    the JSON body, or null for none
      *

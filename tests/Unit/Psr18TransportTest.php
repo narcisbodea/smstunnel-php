@@ -75,6 +75,20 @@ final class Psr18TransportTest extends TestCase
         self::assertSame('', (string) $http->request->getBody());
     }
 
+    public function testACancelIsADeleteWithoutABody(): void
+    {
+        $http = new RecordingClient(new Response(200, [], '{"success":true,"data":{"id":"6b0a1c2d3e4f5a6b7c8d9e0f","status":"canceled"}}'));
+        $factory = new Psr17Factory();
+        $client = new Client('sk_test_key', 'https://sms.example.test', new Psr18Transport($http, $factory, $factory));
+
+        self::assertSame('canceled', $client->cancelScheduled('6b0a1c2d3e4f5a6b7c8d9e0f')->status);
+        self::assertNotNull($http->request);
+        self::assertSame('DELETE', $http->request->getMethod());
+        self::assertSame('https://sms.example.test/api/v1/sms/scheduled/6b0a1c2d3e4f5a6b7c8d9e0f', (string) $http->request->getUri());
+        self::assertSame('', (string) $http->request->getBody());
+        self::assertFalse($http->request->hasHeader('Content-Type'));
+    }
+
     public function testErrorAnswersAndHeadersAreMapped(): void
     {
         $http = new RecordingClient(new Response(403, ['X-Trace' => ['a', 'b']], '{"message":"Missing permission","code":"PERMISSION_REQUIRED","permission":"sms:read"}'));

@@ -117,6 +117,31 @@ final class CurlTransportTest extends TestCase
         self::assertArrayNotHasKey('idempotency-key', $plain['headers']);
     }
 
+    public function testAScheduledTextReachesTheServerWithItsTime(): void
+    {
+        $client = new Client('sk_test_key', self::$baseUrl);
+
+        $echo = $client->sendSms('+14155550123', 'Hi', sendAt: new \DateTimeImmutable('2026-11-16 09:00', new \DateTimeZone('Europe/Bucharest')))->raw;
+
+        self::assertSame('POST', $echo['method'] ?? null);
+        self::assertSame('/api/v1/sms/send', $echo['uri'] ?? null);
+        self::assertSame('{"to":"+14155550123","message":"Hi","sendAt":"2026-11-16T09:00:00+02:00"}', $echo['body'] ?? null);
+    }
+
+    public function testACancelIsADeleteWithoutABody(): void
+    {
+        $client = new Client('sk_test_key', self::$baseUrl);
+
+        $echo = $client->cancelScheduled('6b0a1c2d3e4f5a6b7c8d9e0f')->raw;
+
+        self::assertSame('DELETE', $echo['method'] ?? null);
+        self::assertSame('/api/v1/sms/scheduled/6b0a1c2d3e4f5a6b7c8d9e0f', $echo['uri'] ?? null);
+        self::assertSame('', $echo['body'] ?? null);
+        self::assertIsArray($echo['headers']);
+        self::assertSame('sk_test_key', $echo['headers']['x-api-key'] ?? null);
+        self::assertArrayNotHasKey('content-type', $echo['headers']);
+    }
+
     public function testA401BecomesAnAuthenticationException(): void
     {
         $client = new Client('sk_test_key', self::$baseUrl . '/fail-401');

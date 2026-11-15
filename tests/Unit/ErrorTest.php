@@ -24,11 +24,15 @@ final class ErrorTest extends TestCase
     {
         return [
             'sendSms' => [static fn (Client $client): mixed => $client->sendSms('+14155550123', 'Hi')],
+            'sendSms with sendAt' => [static fn (Client $client): mixed => $client->sendSms('+14155550123', 'Hi', sendAt: '2026-11-16T07:00:00Z')],
             'sendVerificationCode' => [static fn (Client $client): mixed => $client->sendVerificationCode('+14155550123', 'Code 123456')],
             'getMessageStatus' => [static fn (Client $client): mixed => $client->getMessageStatus('m1')],
             'getReceivedMessages' => [static fn (Client $client): mixed => $client->getReceivedMessages(['limit' => 5])],
             'getDevices' => [static fn (Client $client): mixed => $client->getDevices()],
             'getUsage' => [static fn (Client $client): mixed => $client->getUsage()],
+            'listScheduled' => [static fn (Client $client): mixed => $client->listScheduled()],
+            'getScheduled' => [static fn (Client $client): mixed => $client->getScheduled('6b0a1c2d3e4f5a6b7c8d9e0f')],
+            'cancelScheduled' => [static fn (Client $client): mixed => $client->cancelScheduled('6b0a1c2d3e4f5a6b7c8d9e0f')],
         ];
     }
 
