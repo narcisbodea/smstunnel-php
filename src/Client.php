@@ -31,13 +31,21 @@ use SmsTunnel\Transport\TransportInterface;
  * Every call throws {@see ApiException} when SMSTunnel answers with an error (with subclasses
  * {@see AuthenticationException} for 401, {@see PermissionException} for 403, {@see RateLimitException}
  * for 429) and {@see TransportException} when SMSTunnel cannot be reached.
+ *
+ * The client never retries on its own. To retry a send safely, give it an `$idempotencyKey` (see {@see sendSms()}).
  */
 class Client
 {
-    public const VERSION = '1.0.0';
+    public const VERSION = '1.1.0';
     public const DEFAULT_BASE_URL = 'https://smstunnel.io';
 
     private const RECEIVED_FILTERS = ['limit', 'page', 'since', 'phone', 'deviceId'];
+
+    /**
+     * What SMSTunnel accepts as an Idempotency-Key (printable ASCII, at most 255), without spaces at the ends: the
+     * server trims them, and a key of spaces only would silently mean no key at all.
+     */
+    private const IDEMPOTENCY_KEY = '/^[\x21-\x7e](?:[\x20-\x7e]{0,253}[\x21-\x7e])?\z/';
 
     private readonly string $apiKey;
     private readonly string $baseUrl;
@@ -76,14 +84,24 @@ class Client
      * @param string      $message            up to 1600 characters (10 joined SMS)
      * @param string|null $deviceId           send through this phone (see {@see getDevices()}); null lets SMSTunnel pick one of yours
      * @param string|null $defaultCountryCode e.g. `+40`: completes numbers given without `+` or `00`. It always takes precedence over the phone's own setting.
+     * @param string|null $idempotencyKey     makes the call safe to retry. It goes out as the `Idempotency-Key` header. For 24 hours, a repeat of
+     *                                        the call with the same key gets the first answer back (the same message id) instead of a second text;
+     *                                        the same key with a different text, number, phone or country code is refused ({@see ApiException} 422,
+     *                                        error code `IDEMPOTENCY_KEY_REUSED`). Use one new key per text and the same key on every retry of it:
+     *                                        a UUID, or your own id such as `order-1042-shipped`. 1 to 255 printable ASCII characters, no spaces at the ends.
      *
-     * @throws \InvalidArgumentException when the number or the text is empty
+     * @throws \InvalidArgumentException when the number or the text is empty, or the key is not 1 to 255 printable ASCII characters without spaces at the ends
      * @throws ApiException
      * @throws TransportException
      */
-    public function sendSms(string $to, string $message, ?string $deviceId = null, ?string $defaultCountryCode = null): SendResult
-    {
-        return SendResult::fromArray($this->post('/api/v1/sms/send', $this->sendBody($to, $message, $deviceId, $defaultCountryCode)));
+    public function sendSms(
+        string $to,
+        string $message,
+        ?string $deviceId = null,
+        ?string $defaultCountryCode = null,
+        ?string $idempotencyKey = null,
+    ): SendResult {
+        return SendResult::fromArray($this->post('/api/v1/sms/send', $this->sendBody($to, $message, $deviceId, $defaultCountryCode), $idempotencyKey));
     }
 
     /**
@@ -92,14 +110,20 @@ class Client
      *
      * @param string|null $deviceId           send through this phone; null lets SMSTunnel pick one of yours
      * @param string|null $defaultCountryCode e.g. `+40`, for numbers given without `+` or `00`
+     * @param string|null $idempotencyKey     as in {@see sendSms()}: a retry with the same key can't send the code twice
      *
-     * @throws \InvalidArgumentException when the number or the text is empty
+     * @throws \InvalidArgumentException when the number or the text is empty, or the key is not a valid key
      * @throws ApiException
      * @throws TransportException
      */
-    public function sendVerificationCode(string $to, string $message, ?string $deviceId = null, ?string $defaultCountryCode = null): SendResult
-    {
-        return SendResult::fromArray($this->post('/api/v1/sms/send-2fa', $this->sendBody($to, $message, $deviceId, $defaultCountryCode)));
+    public function sendVerificationCode(
+        string $to,
+        string $message,
+        ?string $deviceId = null,
+        ?string $defaultCountryCode = null,
+        ?string $idempotencyKey = null,
+    ): SendResult {
+        return SendResult::fromArray($this->post('/api/v1/sms/send-2fa', $this->sendBody($to, $message, $deviceId, $defaultCountryCode), $idempotencyKey));
     }
 
     /**
@@ -221,21 +245,45 @@ class Client
      *
      * @return array<string, mixed>
      */
-    private function post(string $path, array $body): array
+    private function post(string $path, array $body, ?string $idempotencyKey = null): array
     {
+        // Checked before anything is sent: a key SMSTunnel can't take throws.
+        $headers = self::idempotencyHeaders($idempotencyKey);
+
         try {
             $json = json_encode($body, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
         } catch (\JsonException $exception) {
             throw new \InvalidArgumentException('The text could not be encoded: ' . $exception->getMessage(), 0, $exception);
         }
 
-        return $this->request('POST', $path, $json);
+        return $this->request('POST', $path, $json, $headers);
     }
 
     /**
+     * The `Idempotency-Key` header for the key, none when it is null.
+     *
+     * @return array<string, string>
+     *
+     * @throws \InvalidArgumentException when SMSTunnel can't take the key
+     */
+    private static function idempotencyHeaders(?string $key): array
+    {
+        if ($key === null) {
+            return [];
+        }
+        if (preg_match(self::IDEMPOTENCY_KEY, $key) !== 1) {
+            throw new \InvalidArgumentException('The idempotency key must be 1 to 255 printable ASCII characters, without spaces at the ends (a UUID is a good choice).');
+        }
+
+        return ['Idempotency-Key' => $key];
+    }
+
+    /**
+     * @param array<string, string> $extraHeaders
+     *
      * @return array<string, mixed>
      */
-    private function request(string $method, string $path, ?string $json): array
+    private function request(string $method, string $path, ?string $json, array $extraHeaders = []): array
     {
         $headers = [
             'X-API-Key' => $this->apiKey,
@@ -245,6 +293,7 @@ class Client
         if ($json !== null) {
             $headers['Content-Type'] = 'application/json';
         }
+        $headers += $extraHeaders;
 
         $response = $this->transport->send($method, $this->baseUrl . $path, $headers, $json);
         $body = self::decode($response);

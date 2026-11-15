@@ -10,6 +10,7 @@ namespace SmsTunnel\Exception;
  * - {@see getStatusCode()}: the HTTP status (also the exception's `getCode()`).
  * - {@see getErrorCode()}: SMSTunnel's own code when it sends one, such as `PERMISSION_REQUIRED`.
  * - `getMessage()`: what went wrong, in SMSTunnel's words.
+ * - {@see getRetryAfter()}: the seconds to wait before trying again, when SMSTunnel says.
  *
  * Statuses worth handling, each with its own subclass:
  * - 401 {@see AuthenticationException}: the API key is wrong, expired, or its account is suspended.
@@ -17,7 +18,10 @@ namespace SmsTunnel\Exception;
  * - 429 {@see RateLimitException}: too many requests; wait and try again.
  *
  * Others: 400 (the server refused a field, for example a number it cannot read, or a verification text
- * without a code), 404 (no such message or phone for this key), 5xx (a problem on SMSTunnel's side).
+ * without a code), 404 (no such message or phone for this key), 409 with error code `IDEMPOTENCY_KEY_IN_PROGRESS`
+ * (the first try with this idempotency key is still running: try again after {@see getRetryAfter()} seconds to get
+ * its answer), 422 with error code `IDEMPOTENCY_KEY_REUSED` (the idempotency key was already used for a different
+ * text; nothing was sent), 5xx (a problem on SMSTunnel's side).
  */
 class ApiException extends SmsTunnelException
 {
@@ -63,11 +67,33 @@ class ApiException extends SmsTunnelException
     /**
      * SMSTunnel's code for errors your software can act on, for example:
      * - `PERMISSION_REQUIRED`: the key lacks a permission (see {@see PermissionException::getPermission()}).
+     * - `IDEMPOTENCY_KEY_REUSED` (422): the idempotency key was already used for a different text.
+     * - `IDEMPOTENCY_KEY_IN_PROGRESS` (409): the first try with this idempotency key is still running.
      * - `DISABLED_BY_SUPPORT`: SMSTunnel support turned the key or the phone off.
      */
     public function getErrorCode(): ?string
     {
         return $this->errorCode;
+    }
+
+    /**
+     * Seconds to wait before trying again, when SMSTunnel says (the `Retry-After` header): on a 429 for too many
+     * requests, and on a 409 while the first try with the same idempotency key is still running. Null when
+     * SMSTunnel sent none, for example on a 429 for a daily limit.
+     */
+    public function getRetryAfter(): ?int
+    {
+        $value = $this->headers['retry-after'] ?? null;
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+        if (ctype_digit(trim($value))) {
+            return (int) trim($value);
+        }
+
+        $time = strtotime($value);
+
+        return $time === false ? null : max(0, $time - time());
     }
 
     /** The body SMSTunnel sent: the decoded JSON (an array), the raw text, or null when it was empty. */

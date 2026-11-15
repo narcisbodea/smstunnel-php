@@ -101,6 +101,22 @@ final class CurlTransportTest extends TestCase
         self::assertSame('/api/v1/devices', $devices->raw['uri']);
     }
 
+    public function testTheIdempotencyKeyReachesTheServer(): void
+    {
+        $client = new Client('sk_test_key', self::$baseUrl);
+
+        $sent = $client->sendSms('+14155550123', 'Hi', idempotencyKey: 'order-1042-shipped')->raw['data'] ?? null;
+        $plain = $client->sendSms('+14155550123', 'Hi')->raw['data'] ?? null;
+
+        self::assertIsArray($sent);
+        self::assertSame('/api/v1/sms/send', $sent['uri'] ?? null);
+        self::assertIsArray($sent['headers']);
+        self::assertSame('order-1042-shipped', $sent['headers']['idempotency-key'] ?? null);
+        self::assertIsArray($plain);
+        self::assertIsArray($plain['headers']);
+        self::assertArrayNotHasKey('idempotency-key', $plain['headers']);
+    }
+
     public function testA401BecomesAnAuthenticationException(): void
     {
         $client = new Client('sk_test_key', self::$baseUrl . '/fail-401');

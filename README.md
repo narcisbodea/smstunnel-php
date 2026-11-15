@@ -51,6 +51,7 @@ $result = $client->sendSms(
     message: 'See you at 10:30.',  // up to 1600 characters
     deviceId: null,                // a phone id from getDevices(), or null to let SMSTunnel pick one of yours
     defaultCountryCode: null,      // e.g. '+40': completes numbers given without + or 00
+    idempotencyKey: null,          // e.g. 'order-1042-shipped': a retry with the same key can't send it twice
 );
 
 $result->messageId; // string
@@ -134,7 +135,7 @@ Every call throws a `SmsTunnel\Exception\SmsTunnelException` when it does not go
 | `AuthenticationException` (401) | The API key is wrong, was deleted, or its account is suspended. |
 | `PermissionException` (403) | The key lacks a permission (`getErrorCode()` is `PERMISSION_REQUIRED`, `getPermission()` names it, e.g. `sms:inbox`), or the plan does not include the feature. |
 | `RateLimitException` (429) | Too many requests. `getRetryAfter()` gives the seconds to wait, when SMSTunnel says. |
-| `ApiException` | Any other error answer: 400 (a number it cannot read, a verification text without a code), 404 (no such message), 5xx. The three above extend it. |
+| `ApiException` | Any other error answer: 400 (a number it cannot read, a verification text without a code), 404 (no such message), 409 and 422 for an `idempotencyKey` (see [Retrying safely](#retrying-safely)), 5xx. The three above extend it. |
 | `TransportException` | SMSTunnel could not be reached (DNS, TLS, timeout). |
 
 ```php
@@ -153,7 +154,39 @@ try {
 }
 ```
 
-`getMessage()` is SMSTunnel's own explanation, `getStatusCode()` (also `getCode()`) the HTTP status, `getBody()` the decoded answer. An empty number or text throws `\InvalidArgumentException` before anything is sent.
+`getMessage()` is SMSTunnel's own explanation, `getStatusCode()` (also `getCode()`) the HTTP status, `getBody()` the decoded answer, and `getRetryAfter()` the seconds to wait when SMSTunnel says. An empty number or text throws `\InvalidArgumentException` before anything is sent.
+
+## Retrying safely
+
+The client never retries on its own. To retry a text without risking a second copy, give the send an `idempotencyKey`: one new key per text, and the same key on every retry of that text. It goes out as the `Idempotency-Key` header, and for 24 hours SMSTunnel answers a repeat with its first answer (the same `messageId`) instead of sending the text again.
+
+```php
+use SmsTunnel\Exception\ApiException;
+use SmsTunnel\Exception\TransportException;
+
+$key = bin2hex(random_bytes(16)); // or your own id for this text, e.g. 'order-1042-shipped'
+
+for ($attempt = 1; $attempt <= 3; ++$attempt) {
+    try {
+        $result = $client->sendSms('+14155550123', 'Your order #1042 has shipped.', idempotencyKey: $key);
+        break;
+    } catch (TransportException $e) {
+        $wait = 2; // no answer came, so the text may or may not have gone out: try again with the same key
+    } catch (ApiException $e) {
+        $wait = $e->getRetryAfter(); // 429 too many requests, or 409 while the first try is still running
+    }
+    if ($wait === null || $attempt === 3) {
+        throw $e; // a refusal (the same call would be refused again), or the last try
+    }
+    sleep($wait);
+}
+```
+
+- `sendVerificationCode()` takes `idempotencyKey` too.
+- The same key with a different text, number, phone or country code gets an `ApiException` with status 422 and `getErrorCode()` `IDEMPOTENCY_KEY_REUSED`, and nothing goes out.
+- A refusal (4xx) means nothing went out: fix the cause, then retry with the same key. A server error (5xx) is kept with the key, because the text may have gone out before it: a retry gets the same error back. Check your dashboard before you send that text again with a new key.
+- A key is 1 to 255 printable ASCII characters, without spaces at the ends. Anything else throws `\InvalidArgumentException` before anything is sent.
+- SMSTunnel remembers a key for 24 hours: a retry after that sends the text again.
 
 ## Your own HTTP client
 
@@ -206,8 +239,13 @@ How it works:
   any PSR-18 client; no other dependencies).
 - $client = new \SmsTunnel\Client((string) getenv('SMSTUNNEL_API_KEY'));
 - $result = $client->sendSms(to: '+14155550123', message: '...', deviceId: null, defaultCountryCode:
-  null); returns ->messageId, ->queued (true: the phone is offline and the text goes out when it is
-  back), ->branded, ->remaining. One call sends one text to one number: loop for several.
+  null, idempotencyKey: null); returns ->messageId, ->queued (true: the phone is offline and the text
+  goes out when it is back), ->branded, ->remaining. One call sends one text to one number: loop for
+  several.
+- Retries: the client never retries on its own. idempotencyKey (one new key per text, such as
+  bin2hex(random_bytes(16)), the same on every retry of that text) makes a retry within 24 hours get
+  the first answer back instead of sending a second text. The same key with a different text is
+  refused: ApiException 422, getErrorCode() IDEMPOTENCY_KEY_REUSED.
 - Sign-in codes: $client->sendVerificationCode('+14155550123', 'Your sign-in code is 482913'); the
   text must contain the code as 4 to 10 digits (or 123-456) and can be up to 320 characters. Codes
   have their own daily allowance.
@@ -232,8 +270,9 @@ Rules for your answer:
   placeholder.
 - Validate phone numbers before sending (international format, like +14155550123) and skip or report
   the invalid ones.
-- Handle errors: log or show what went wrong, retry only after 429, 5xx or network errors and only a
-  few times, and never send the same text twice.
+- Handle errors: log or show what went wrong. Retry only after a network error or when
+  getRetryAfter() says when (429, 409), a few times at most, always with the same idempotencyKey,
+  so the same text never goes out twice.
 - Only send texts people expect from me: alerts to myself, reminders, sign-in codes, updates they
   asked for. No unsolicited texts.
 ```

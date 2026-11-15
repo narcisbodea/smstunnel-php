@@ -6,22 +6,8 @@ namespace SmsTunnel\Exception;
 
 /**
  * 429: too many requests in a short time (sending allows 30 requests a minute), or a daily limit is reached.
+ * {@see getRetryAfter()} says how long to wait after too many requests; it is null for a daily limit.
  */
 class RateLimitException extends ApiException
 {
-    /** Seconds to wait before trying again, when SMSTunnel says (the `Retry-After` header). */
-    public function getRetryAfter(): ?int
-    {
-        $value = $this->getHeaders()['retry-after'] ?? null;
-        if ($value === null || trim($value) === '') {
-            return null;
-        }
-        if (ctype_digit(trim($value))) {
-            return (int) trim($value);
-        }
-
-        $time = strtotime($value);
-
-        return $time === false ? null : max(0, $time - time());
-    }
 }
