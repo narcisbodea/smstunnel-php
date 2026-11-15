@@ -3,7 +3,7 @@
 All notable changes to `smstunnel/smstunnel-php` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [1.2.0] - Unreleased
+## [1.2.0] - 2026-11-15
 
 ### Added
 
@@ -30,7 +30,7 @@ All notable changes to `smstunnel/smstunnel-php` are documented here. The format
 Scheduling needs SMSTunnel with scheduled texts; a server without them answers 400 "property sendAt should not exist"
 (an `ApiException`).
 
-## [1.1.0] - 2026-11-09
+## [1.1.0] - not released on its own (these changes ship in 1.2.0)
 
 ### Added
 
