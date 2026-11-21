@@ -154,7 +154,21 @@ final class ClientTest extends TestCase
         self::assertNull($status->deliveredAt);
         self::assertNull($status->errorMessage);
         self::assertFalse($status->unconfirmed);
-        self::assertFalse($status->isFinal());
+        self::assertTrue($status->isFinal());
+    }
+
+    public function testIsFinalForEveryStatus(): void
+    {
+        $final = static fn (string $status): bool => MessageStatus::fromArray([
+            'id' => 'm', 'phoneNumber' => '+14155550123', 'status' => $status,
+        ])->isFinal();
+
+        self::assertFalse($final(MessageStatus::PENDING));
+        self::assertTrue($final(MessageStatus::SENT));
+        self::assertTrue($final(MessageStatus::DELIVERED));
+        self::assertTrue($final(MessageStatus::FAILED));
+        self::assertTrue($final(MessageStatus::UNCONFIRMED));
+        self::assertFalse($final('a-status-this-version-does-not-know'));
     }
 
     public function testAnUnconfirmedTextIsFinal(): void

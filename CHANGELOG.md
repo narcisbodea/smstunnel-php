@@ -3,6 +3,20 @@
 All notable changes to `smstunnel/smstunnel-php` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-11-21
+
+### Fixed
+
+- `MessageStatus::isFinal()` is now `true` for `sent`. The SMSTunnel app gets no delivery reports, so a text that went
+  out stays `sent`, and code waiting "until final" never stopped. `sent` is the last good status today; `delivered` is
+  reserved and still counts as final. `pending` and statuses this version doesn't know are still not final.
+- The docs no longer promise a delivery confirmation.
+
+### Compatibility
+
+- Only `isFinal()` changes. If your code waits for `isFinal()` and then looks for `delivered`, treat `sent` as success
+  too.
+
 ## [1.2.0] - 2026-11-15
 
 ### Added

@@ -106,16 +106,18 @@ use SmsTunnel\Response\MessageStatus;
 
 $status = $client->getMessageStatus($result->messageId);
 
-$status->status;         // 'pending', 'sent', 'delivered' or 'failed'
+$status->status;         // 'pending', 'sent' or 'failed'
 $status->deliveryStatus; // the same, or 'unconfirmed': handed to the SIM but the phone got no confirmation
 $status->sentAt;         // ISO 8601, or null
 $status->errorMessage;   // why it failed, or null
-$status->isFinal();      // true once it will not change any more
+$status->isFinal();      // true once there is nothing more to wait for: sent, delivered, failed or unconfirmed
 
 if ($status->status === MessageStatus::FAILED) {
     // ...
 }
 ```
+
+`sent` is the last good status today: the SMSTunnel app gets no delivery reports, so a text that went out stays `sent`. `delivered` is reserved.
 
 ### Read received texts
 
@@ -282,7 +284,7 @@ How it works:
 - Sign-in codes: $client->sendVerificationCode('+14155550123', 'Your sign-in code is 482913'); the
   text must contain the code as 4 to 10 digits (or 123-456) and can be up to 320 characters. Codes
   have their own daily allowance.
-- $client->getMessageStatus($messageId): ->status ('pending', 'sent', 'delivered' or 'failed'),
+- $client->getMessageStatus($messageId): ->status ('pending', 'sent' or 'failed'; 'sent' is the last good status, there are no delivery reports),
   ->deliveryStatus ('unconfirmed' = handed to the SIM without a confirmation, probably sent: never
   resend it automatically), ->errorMessage, ->isFinal().
 - Exceptions, all extending SmsTunnel\Exception\SmsTunnelException: AuthenticationException (401),

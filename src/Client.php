@@ -38,7 +38,7 @@ use SmsTunnel\Transport\TransportInterface;
  */
 class Client
 {
-    public const VERSION = '1.2.0';
+    public const VERSION = '1.2.1';
     public const DEFAULT_BASE_URL = 'https://smstunnel.io';
 
     private const RECEIVED_FILTERS = ['limit', 'page', 'since', 'phone', 'deviceId'];

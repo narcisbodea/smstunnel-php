@@ -12,7 +12,9 @@ use SmsTunnel\Internal\Fields;
 final class MessageStatus
 {
     public const PENDING = 'pending';
+    /** The phone sent it. The last good status today: the app gets no delivery reports, so a text that went out stays `sent`. */
     public const SENT = 'sent';
+    /** Reserved for a delivery report. The app gets none today, so the texts you send don't reach this status. */
     public const DELIVERED = 'delivered';
     public const FAILED = 'failed';
     /** Handed to the SIM, but the phone got no confirmation. Final: SMSTunnel never retries it. */
@@ -23,7 +25,7 @@ final class MessageStatus
      * @param string|null          $deliveryStatus the real state, which can also be `unconfirmed`
      * @param bool                 $unconfirmed    true when the phone handed the text to the SIM but got no confirmation
      * @param string|null          $sentAt         ISO 8601 time
-     * @param string|null          $deliveredAt    ISO 8601 time
+     * @param string|null          $deliveredAt    reserved, like `delivered`: null for the texts you send today
      * @param array<string, mixed> $raw            the whole `data` object
      */
     public function __construct(
@@ -57,9 +59,12 @@ final class MessageStatus
         );
     }
 
-    /** True once the text will not change any more: delivered, failed or unconfirmed. */
+    /**
+     * True once there is nothing more to wait for: sent, delivered, failed or unconfirmed.
+     * A text the phone sent stays `sent`, because the app gets no delivery reports.
+     */
     public function isFinal(): bool
     {
-        return \in_array($this->deliveryStatus ?? $this->status, [self::DELIVERED, self::FAILED, self::UNCONFIRMED], true);
+        return \in_array($this->deliveryStatus ?? $this->status, [self::SENT, self::DELIVERED, self::FAILED, self::UNCONFIRMED], true);
     }
 }
